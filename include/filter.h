@@ -4,6 +4,9 @@
 #include <cmath>
 #include <opencv2/opencv.hpp>
 
+#include "openclProgram.h"
+#include "kernel.h"
+
 #define PI 3.141592653589793
 #define PI_SQUARE 9.869604401089358
 
@@ -21,6 +24,9 @@ cv::Mat gaussConvolutionFilterGrad(cv::Mat input, const int maskSize, const doub
 void fftshift(cv::Mat fourierMat);
 
 cv::Mat fftConvolution(cv::Mat input, const double sigma);
+
+// Filtrage laplacien
+cv::Mat laplacianGPUFilter(unsigned char *input, int width, int height, OpenCLProgram &ourProgram);
 
 // Filtre median
 cv::Mat computeMedian(cv::Mat input, const int size);

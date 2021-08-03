@@ -3,6 +3,12 @@
 double *gaussianKernel;
 double normalizeCoeff;
 
+static float filter5x5[25] = {1.0/256,  4.0/256,  6.0/256,  4.0/256, 1.0/256, 
+                              4.0/256, 16.0/256, 24.0/256, 16.0/256, 4.0/256,
+                              6.0/256, 24.0/256, 36.0/256, 24.0/256, 6.0/256, 
+                              4.0/256, 16.0/256, 24.0/256, 16.0/256, 4.0/256,
+                              1.0/256,  4.0/256,  6.0/256,  4.0/256, 1.0/256};
+
 // Convolution pour un pixel donné
 uchar convolutionPixel(const cv::Mat &input, const int halfMaskSize, const double sigma, const int x, const int y)
 {
@@ -188,6 +194,92 @@ cv::Mat fftConvolution(cv::Mat input, const double sigma)
     // Conversion en image de uchar
     cv::Mat output;
     inverseTransform.convertTo(output, CV_8UC1);
+    return output;
+}
+
+// Laplacien de l'image
+cv::Mat laplacianGPUFilter(unsigned char *input, int width, int height, OpenCLProgram &ourProgram)
+{
+    const char *kernelPath = "../kernels/gaussian.cl";
+    const char *kernelName = "gaussian";
+    Kernel gaussianGPUKernel(ourProgram._context, ourProgram._devices,
+                             kernelPath, kernelName);
+
+    cl::ImageFormat imageFormat = cl::ImageFormat(CL_RGBA, CL_UNSIGNED_INT8);
+    cl::Buffer filter = cl::Buffer(ourProgram._context, CL_MEM_READ_ONLY, 25*sizeof(float));
+    cl::Sampler sampler = cl::Sampler(ourProgram._context, CL_FALSE, 
+                                      CL_ADDRESS_CLAMP_TO_EDGE, CL_FILTER_NEAREST);
+
+    cl::Image2D inputImage;
+    cl::Image2D outputImage;
+    cl::size_t<3> origin;
+    cl::size_t<3> region;
+
+    try
+    {
+        inputImage = cl::Image2D(ourProgram._context, CL_MEM_READ_ONLY, 
+                                 imageFormat, width, height);
+        outputImage = cl::Image2D(ourProgram._context, CL_MEM_READ_WRITE,
+                                  imageFormat, width, height);
+
+        origin[0] = 0; origin[1] = 0; origin[2] = 0;
+        region[0] = width; region[1] = height; region[2] = 1;
+
+        ourProgram._queue.enqueueWriteImage(inputImage, CL_TRUE, origin, region, 0, 0, input);
+        ourProgram._queue.enqueueWriteBuffer(filter, CL_TRUE, 0, 25*sizeof(float), filter5x5);	
+
+        gaussianGPUKernel._kernel.setArg(0, inputImage);
+        gaussianGPUKernel._kernel.setArg(1, outputImage);
+        gaussianGPUKernel._kernel.setArg(2, filter);
+        gaussianGPUKernel._kernel.setArg(3, sampler);
+
+        cl::NDRange global(width, height);
+        cl::NDRange local(8,8);
+        ourProgram._queue.enqueueNDRangeKernel(gaussianGPUKernel._kernel, cl::NullRange, global, local);
+    } 
+    catch (cl::Error &error) 
+    {
+        std::cout << error.what() << "(" << error.err() << ")" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    kernelPath = "../kernels/laplacian.cl";
+    kernelName = "laplacian";
+    Kernel laplacianGPUKernel(ourProgram._context, ourProgram._devices,
+                              kernelPath, kernelName);
+
+    unsigned char * outputGPU = (unsigned char *)malloc(sizeof(unsigned char) * width * height * 4);
+
+    try
+    {
+        cl::Image2D gaussianDown = inputImage;
+        cl::Image2D gaussianUp = outputImage;
+        cl::Image2D outputLaplacian = cl::Image2D(ourProgram._context, CL_MEM_WRITE_ONLY,
+                                                  imageFormat, width, height);
+
+        laplacianGPUKernel._kernel.setArg(0, gaussianDown);
+        laplacianGPUKernel._kernel.setArg(1, gaussianUp);
+        laplacianGPUKernel._kernel.setArg(2, outputLaplacian);
+        laplacianGPUKernel._kernel.setArg(3, sampler);
+
+        cl::NDRange global(width, height);
+        cl::NDRange local(8, 8);
+        ourProgram._queue.enqueueNDRangeKernel(laplacianGPUKernel._kernel, cl::NullRange, global, local);
+
+        ourProgram._queue.enqueueReadImage(outputLaplacian, CL_TRUE, origin, region, 0, 0, outputGPU);
+
+    }
+    catch (cl::Error &error) 
+    {
+        std::cout << error.what() << "(" << error.err() << ")" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    cv::Mat output(height, width, CV_8UC4);
+    std::memcpy(output.data, outputGPU, sizeof(unsigned char) * width * height * 4);
+
+    free(outputGPU);
+
     return output;
 }
 

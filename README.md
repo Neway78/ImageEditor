@@ -1,6 +1,6 @@
 # Image Editor
 
-A small image editor with different image processing algorithms implemented. The following dependencies are required to run the project: OpenCv, Qt
+A small image editor with different image processing algorithms implemented. The following dependencies are required to run the project: OpenCv, Qt, OpenCL
 
 ![Image Editor Screenshot](screenshot.png)
 

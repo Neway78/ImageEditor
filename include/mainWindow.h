@@ -3,6 +3,8 @@
 
 #include <QtWidgets>
 
+#include "openclProgram.h"
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -18,6 +20,7 @@ private slots:
     void retrieveFields(QStringList outputFields);
     void gaussFilterSpatial();
     void gaussFilterTime();
+	void laplacianFilter();
     void medianFilter();
     void bilateralFilter();
     void cannyEdgeDetection();
@@ -46,7 +49,10 @@ private:
     QImage outputImage;
     QLabel *inputImageLabel;
     QLabel *outputImageLabel;
-    QStringList paramFields;    
+    QStringList paramFields;
+
+    bool initializeOpenCL;
+    OpenCLProgram ourProgram;   
 };
 
 #endif

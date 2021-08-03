@@ -6,8 +6,14 @@
 #include "violaJones.h"
 #include "outils.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), inputImageLabel(new QLabel()), outputImageLabel(new QLabel())
+    : QMainWindow(parent)
+    , inputImageLabel(new QLabel())
+    , outputImageLabel(new QLabel())
+    , initializeOpenCL(false)
 {
     createMenus();
     
@@ -48,6 +54,7 @@ void MainWindow::createMenus()
     gaussianSubMenu = filteringMenu->addMenu(tr("&Gaussian Filter"));
     gaussianSubMenu->addAction(tr("&Spatial Domain"), this, &MainWindow::gaussFilterSpatial);
     gaussianSubMenu->addAction(tr("&Time Domain"), this, &MainWindow::gaussFilterTime);
+	filteringMenu->addAction(tr("&Laplacian Filter"), this, &MainWindow::laplacianFilter);
     filteringMenu->addAction(tr("&Median Filter"), this, &MainWindow::medianFilter);
     filteringMenu->addAction(tr("&Bilateral Filter"), this, &MainWindow::bilateralFilter);
 
@@ -120,7 +127,7 @@ void MainWindow::gaussFilterSpatial()
         cv::Mat cvInputImage = cv::imread(imagePath.toStdString());
         
         QStringList filterFields = {"Taille du Kernel:", "Sigma:"};
-        QStringList valuesFields = {"5", "0.4"};
+        QStringList valuesFields = {"5", "2.0"};
         PopUp *filterParams = new PopUp(&filterFields, &valuesFields, this);
         filterParams->exec();
 
@@ -143,7 +150,7 @@ void MainWindow::gaussFilterTime()
         cv::Mat cvInputImage = cv::imread(imagePath.toStdString());
         
         QStringList filterFields = {"Sigma:"};
-        QStringList valuesFields = {"0.4"};
+        QStringList valuesFields = {"2.0"};
         PopUp *filterParams = new PopUp(&filterFields, &valuesFields, this);
         filterParams->exec();
 
@@ -154,6 +161,27 @@ void MainWindow::gaussFilterTime()
         outputImage = Mat2QImage(cvOutputImage);
         outputImageLabel->setPixmap(QPixmap::fromImage(outputImage.scaled(outputImageLabel->size(), Qt::KeepAspectRatio)));
         paramFields.clear();
+    }
+}
+
+void MainWindow::laplacianFilter()
+{
+    if (!inputImage.isNull()) {
+        int width, height, channels;
+        unsigned char *inputImage = stbi_load(imagePath.toStdString().c_str(), &width, &height, &channels, 4);
+
+        if (width % 8 == 0 && height % 8 == 0) {
+            if (!initializeOpenCL) {
+                ourProgram.initProgram();
+                initializeOpenCL = true;
+            }
+
+            cv::Mat cvOutputImage = laplacianGPUFilter(inputImage, width, height, ourProgram); 
+            outputImage = Mat2QImage(cvOutputImage);
+            outputImageLabel->setPixmap(QPixmap::fromImage(outputImage.scaled(outputImageLabel->size(), Qt::KeepAspectRatio)));
+        } else {
+            std::cout << "Unable to perform laplacian: Image size must be divisible by 8" << std::endl;
+        }
     }
 }
 
@@ -246,7 +274,7 @@ void MainWindow::harrisDetector()
         cv::Mat cvInputImage = cv::imread(imagePath.toStdString());
 
         QStringList filterFields = {"[Gaussian Filter] - Mask Size:", "[Gaussian Filter] - Sigma:", "Threshold - R:"};
-        QStringList valuesFields = {"5", "0.8", "1.0"};
+        QStringList valuesFields = {"5", "2.0", "1000000.0"};
         PopUp *filterParams = new PopUp(&filterFields, &valuesFields, this);
         filterParams->exec();
 
